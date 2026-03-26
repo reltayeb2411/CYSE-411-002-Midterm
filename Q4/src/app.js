@@ -18,9 +18,15 @@ function loadSession() {
 
 
 function renderStatusMessage(containerElement, message) {
-    containerElement.innerHTML = "<p>" + message + "</p>";   // UNSAFE
+    // Clear the container first
+    containerElement.innerHTML = "";
+    
+    // Use createElement + textContent to treat message as literal text (prevents XSS)
+    const p = document.createElement("p");
+    p.textContent = message; 
+    
+    containerElement.appendChild(p);
 }
-
 
 
 //  Q4.B  Search Query Sanitization
@@ -30,19 +36,39 @@ function renderStatusMessage(containerElement, message) {
 
 
 function sanitizeSearchQuery(input) {
-    // TODO: Implement sanitization.
-    // Requirements:
-    //   - Allow only letters, digits, spaces, hyphens, underscores
-    //   - Trim leading/trailing whitespace before processing
-    //   - Max 40 characters
-    //   - Return null if the result is empty after sanitization
-    return input;   // UNSAFE – returns raw input unchanged
+    // If input is null or undefined, return null
+    if (!input) return null;
+
+    // 1. Trim leading/trailing whitespace
+    const trimmed = input.trim();
+
+    // 2. Max 40 characters check & ensure it's not empty after trim
+    if (trimmed.length === 0 || trimmed.length > 40) {
+        return null;
+    }
+
+    // 3. Regex: Allow only letters (a-z, A-Z), digits (0-9), spaces, hyphens (-), underscores (_)
+    // The ^ and $ ensure the ENTIRE string matches only these characters
+    const allowedPattern = /^[a-zA-Z0-9 _-]+$/;
+    
+    if (!allowedPattern.test(trimmed)) {
+        return null; // Return null if any illegal characters (like < > /) are present
+    }
+
+    return trimmed; 
 }
 
 function performSearch(query) {
     const sanitized = sanitizeSearchQuery(query);
     const label = document.getElementById("search-label");
-    label.innerHTML = "Showing results for: " + sanitized;  // UNSAFE
+    
+    // Check if the sanitization returned null (invalid input)
+    if (sanitized === null) {
+        label.textContent = "Invalid search query.";
+    } else {
+        // Use textContent instead of innerHTML to prevent any possible injection
+        label.textContent = "Showing results for: " + sanitized;
+    }
 }
 
 
