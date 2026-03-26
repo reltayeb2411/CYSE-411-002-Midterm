@@ -22,9 +22,27 @@ let currentFilter = "all";
 
 function loadDashboardState() {
     const raw   = localStorage.getItem("dashboardState");
-    const state = JSON.parse(raw);             // No try/catch
-    currentFilter = state.filter;              // No enum validation
-    applyFilter(currentFilter);
+    if (!raw) return; // Guard if no state exists
+
+    try {
+        // Fix: Added try/catch for JSON.parse
+        const state = JSON.parse(raw);
+
+        // Fix: Enum validation - check if the filter belongs to the accepted list
+        if (state && ACCEPTED_FILTERS.includes(state.filter)) {
+            currentFilter = state.filter;
+            
+            // Sync the UI dropdown
+            const filterInput = document.getElementById("filter-select");
+            if (filterInput) filterInput.value = currentFilter;
+            
+            applyFilter(currentFilter);
+        }
+    } catch (e) {
+        // Fallback if JSON is corrupted
+        console.error("Failed to parse dashboard state:", e);
+        currentFilter = "all";
+    }
 }
 
 
@@ -37,9 +55,13 @@ function loadDashboardState() {
 
 function saveDashboardState() {
     const filterInput = document.getElementById("filter-select");
-    const filter      = filterInput.value;    // Not validated before storing
-    localStorage.setItem("dashboardState", JSON.stringify({ filter: filter }));
-    currentFilter = filter;
+    const filter      = filterInput.value;
+
+    // Fix: Validate the value against the accepted list before storing
+    if (ACCEPTED_FILTERS.includes(filter)) {
+        localStorage.setItem("dashboardState", JSON.stringify({ filter: filter }));
+        currentFilter = filter;
+    }
 }
 
 
@@ -47,42 +69,71 @@ function saveDashboardState() {
 //  Q5.A  Fetch Incidents
 //  Retrieves open incidents from the REST API.
 //  VULNERABILITY 1: fetch() is called but NOT awaited.
-//    'res' holds a Promise, not a Response object.
-//  VULNERABILITY 2: response.ok is never checked, so
-//    HTTP 401 / 500 error bodies are processed as valid data.
-//  VULNERABILITY 3: No try/catch – a network failure will
-//    crash the function with an unhandled rejection.
+//  VULNERABILITY 2: response.ok is never checked.
+//  VULNERABILITY 3: No try/catch for network failures.
 
 
 async function fetchIncidents() {
-    const res  = fetch("/api/incidents");      // Missing await
-    const data = res.json();                   // Missing await; res is a Promise
-    return data;
+    try {
+        // Fix: Added await for fetch()
+        const res = await fetch("/api/incidents");
+
+        // Fix: Added check for response.ok
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        // Fix: Added await for res.json()
+        const data = await res.json();
+        return data;
+
+    } catch (error) {
+        // Fix: Added try/catch to handle network/parsing failures
+        console.error("Fetch incidents failed:", error);
+        return []; // Return empty array to keep app stable
+    }
 }
 
 
 
 //  Q5.B  Render Incidents
 //  Builds the incident list in the dashboard.
-//  VULNERABILITY 1: Incident data (title, severity) is inserted
-//    via innerHTML – a stored XSS risk if the API returns
-//    attacker-controlled content.
-//  VULNERABILITY 2: No validation of the incidents array or
-//    individual incident fields before rendering.
+//  VULNERABILITY 1: Incident data is inserted via innerHTML (XSS Risk).
+//  VULNERABILITY 2: No validation of the incidents array or individual fields.
 
 
 function renderIncidents(incidents) {
     const container = document.getElementById("incident-list");
-    container.innerHTML = "";                  // Clear previous results
+    container.innerHTML = ""; // Clear previous results
+
+    // Fix: Validation - Ensure we have an array
+    if (!Array.isArray(incidents)) {
+        container.textContent = "Error loading incident data.";
+        return;
+    }
 
     incidents.forEach(function (incident) {
-        const item = document.createElement("li");
-        // UNSAFE – directly inserts API response as HTML
-        item.innerHTML =
-            "<strong>" + incident.title + "</strong>" +
-            " <span class='severity severity-" + incident.severity + "'>" +
-            incident.severity + "</span>";
-        container.appendChild(item);
+        // Fix: Individual field validation
+        const hasTitle = typeof incident.title === 'string' && incident.title.trim() !== "";
+        const hasValidSev = ACCEPTED_SEVERITIES.includes(incident.severity);
+
+        if (hasTitle && hasValidSev) {
+            const item = document.createElement("li");
+
+            // Fix: Use createElement and textContent to prevent Stored XSS
+            const titleEl = document.createElement("strong");
+            titleEl.textContent = incident.title;
+
+            const severityEl = document.createElement("span");
+            severityEl.className = "severity severity-" + incident.severity;
+            severityEl.textContent = " " + incident.severity;
+
+            item.appendChild(titleEl);
+            item.appendChild(severityEl);
+            container.appendChild(item);
+        } else {
+            console.warn("Skipping invalid incident record:", incident);
+        }
     });
 }
 
